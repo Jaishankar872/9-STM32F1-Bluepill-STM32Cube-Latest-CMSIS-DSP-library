@@ -1,10 +1,14 @@
 /**
  * This Code is for STM32F103C8TB
+ * FFT Library Reference: https://gist.github.com/Tomwi/3842231
  */
 
 #include "main.h"
 #include <stdio.h>
-#include "arm_math.h"
+
+#include <math.h>
+#include <stdint.h>
+#include "fix_fft.h"
 
 #define led_pin GPIO_PIN_13
 
@@ -14,8 +18,13 @@ void SystemClock_Config(void);
 UART_HandleTypeDef huart1 = {0}; // Not USART_HandleTypeDef only UART_HandleTypeDef
 void Error_Handler(void);
 
-int16_t data_set[] = {1234, 5678, 9876, 4321, 3456, 7890, 6543, 2109, 8765, 1234, 5678, 9012, 2345, 6789, 4321, 8765, 1098, 3456, 7890, 6543};
-int16_t array_size = 19;
+#define FFT_SAMP (6)             // 2^6=64;
+#define FFT_SIZE (1 << FFT_SAMP) // FFT size (e.g., 64)
+
+int16_t inBuf[FFT_SIZE * 2]; // Buffer for real and imaginary parts
+
+int16_t data_set[] = {2247,2594,2863,3084,3358,3524,3709,3762,3752,3799,3661,3565,3378,3094,2890,2577,2330,1997,1674,1462,1196,1050,887,761,781,767,904,1015,1160,1448,1671,2000,2276,2528,2877,3102,3368,3567,3653,3781,3780,3786,3683,3513,3379,3108,2894,2611,2265,2018,1693,1472,1225,989,907,782,794,794,840,1033,1185,1451,2385,2493};
+int16_t array_size = 64;
 
 // Redirect printf to UART
 int _write(int file, char *ptr, int len)
@@ -34,37 +43,30 @@ int main(void)
   {
 
     printf("\n-----------------------------\n");
-    printf("Calling the CMSIS DSP Library \n");
-    printf("Array Size = %d \n Calculated \n-> Maximum & Minimum out of array \n", array_size);
-    for (int i = 0; i < array_size; i++)
+    printf("Calling the  Library \n");
+    // Duplicate the data
+    for (int i = 0; i < FFT_SIZE; i++)
     {
-      printf("%d) %d\n", i + 1, data_set[i]);
+        inBuf[2 * i] = data_set[i]; // Read real part from ADC
+        inBuf[2 * i + 1] = 0;            // Imaginary part is 0 for real-valued input
+    }
+    // Perform forward FFT
+    fix_fftr(inBuf, FFT_SAMP, 0);
+
+    // Compute magnitude of each frequency bin
+    int16_t magnitude[FFT_SIZE / 2];
+    for (int i = 0; i < FFT_SIZE / 2; i++) {
+        int16_t real = inBuf[2 * i];
+        int16_t imag = inBuf[2 * i + 1];
+        magnitude[i] = (int16_t)sqrt((real * real) + (imag * imag));
+    }
+
+    printf("Array Size = %d \n Calculated \n", array_size);
+    for (int i = 0; i < FFT_SIZE / 2; i++)
+    {
+      printf("%d) %d\n", i + 1, magnitude[i]);
       HAL_Delay(20);
     }
-    /**
-     * CMSIS-DSP Functions for Different Data Types:
-      * Floating-point (float32_t): arm_max_f32()
-      * Q31 (32-bit signed fixed-point): arm_max_q31()
-      * Q15 (16-bit signed fixed-point): arm_max_q15()
-      * Q7 (8-bit signed fixed-point): arm_max_q7()
-
-      Since you're working with int16_t, you should use arm_max_q15().
-      Document reference link: https://arm-software.github.io/CMSIS-DSP/latest/group__Max.html
-     */
-    int16_t _max_cmsis = 0;
-    uint32_t _max_cmsis_index = -1;
-    int16_t _min_cmsis = 0;
-    uint32_t _min_cmsis_index = -1;
-    arm_max_q15(data_set, array_size, &_max_cmsis, &_max_cmsis_index);
-    arm_min_q15(data_set, array_size, &_min_cmsis, &_min_cmsis_index);
-    printf("Maximum Value: %d at index: %ld \n", _max_cmsis, _max_cmsis_index);
-    printf("Minimum Value: %d at index: %ld \n", _min_cmsis, _min_cmsis_index);
-
-    // arm_rfft_init_32_q15(&fft_handle, 0, 1);
-    // Data Types used here: q15 <=> int16_t
-    // fft_handle.fftLenReal = fft_buffer_size;
-    // arm_rfft_q15(&fft_handle, AFC_adc_Volt_data, fft_Buf_out);
-    // arm_cmplx_mag_q15(fft_Buf_out, fft_Buf_out, fft_buffer_size); // Compute magnitude
 
     printf("Task Completed......\n");
 
